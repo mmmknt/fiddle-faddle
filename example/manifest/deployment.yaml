@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sorry
+  labels:
+    app: sorry
+    service: sorry
+spec:
+  ports:
+    - port: 8080
+      name: http
+  selector:
+    app: sorry
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sorry-deployment
+  labels:
+    app: sorry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sorry
+  template:
+    metadata:
+      labels:
+        app: sorry
+    spec:
+      containers:
+        - name: sorry
+          # TODO
+          image: deployed example image
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "20m"
+          env:
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: DD_ENTITY_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: EXECUTION_PLATFORM
+              value: "GKE"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client-test
+  labels:
+    app: client-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: client-test
+  template:
+    metadata:
+      labels:
+        app: client-test
+    spec:
+      containers:
+        - name: client-test
+          # TODO
+          image: deployed fiddle-faddle image
+          env:
+            # TODO should use non-public method
+            - name: DD_CLIENT_API_KEY
+              value: datadog api key
+            - name: DD_CLIENT_APP_KEY
+              value: datadog application key
+      serviceAccountName: test-sa

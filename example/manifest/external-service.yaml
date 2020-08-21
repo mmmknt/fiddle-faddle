@@ -1,0 +1,30 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: svc-entry
+spec:
+  hosts:
+  # TODO
+  - external host
+  ports:
+  - number: 443
+    name: https
+    protocol: TLS
+  location: MESH_EXTERNAL
+  resolution: DNS
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: ext-res-dr
+spec:
+  # TODO
+  host: external host
+  trafficPolicy:
+    portLevelSettings:
+    - port:
+        number: 443
+      tls:
+        mode: SIMPLE
+        # TODO for CloudRun
+        sni: external host

@@ -61,6 +61,7 @@ func (c *DatadogClient) GetRequestCounts(ctx context.Context, monitoringRange in
 		}
 		if sum > maxCount {
 			maxHost = host
+			maxCount = sum
 		}
 		requestCount[host] = sum
 		total += sum

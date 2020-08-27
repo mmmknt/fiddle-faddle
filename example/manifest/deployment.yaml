@@ -69,6 +69,11 @@ spec:
         - name: client-test
           # TODO
           image: deployed fiddle-faddle image
+          args:
+            - /app
+            - worker
+            #- --bufferHost=external-host
+            #- --internalHost=internal-host
           env:
             # TODO should use non-public method
             - name: DD_CLIENT_API_KEY

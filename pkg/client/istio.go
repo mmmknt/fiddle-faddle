@@ -43,6 +43,7 @@ func (c *IstioClient) DeleteVirtualService(ctx context.Context, host string) err
 func (c *IstioClient) CreateVirtualService(ctx context.Context, host string, internalWeight, bufferWeight int) error {
 	log.Println("create virtualservice")
 	vs := c.getVirtualServiceModel(host, internalWeight, bufferWeight)
+	log.Printf("virtual service: %v\n", vs)
 
 	create, err := c.clientSet.NetworkingV1alpha3().VirtualServices(c.namespace).Create(ctx, vs, metav1.CreateOptions{})
 	if err != nil {
@@ -65,6 +66,7 @@ func (c *IstioClient) UpdateVirtualService(ctx context.Context, host, currentRes
 }
 
 func (c *IstioClient) getVirtualServiceModel(host string, internalWeight, bufferWeight int) *v1alpha3.VirtualService {
+	log.Printf("externalDestination: %v, internalDestination: %v\n", c.externalDestination, c.internalDestination)
 	/*
 			apiVersion: networking.istio.io/v1alpha3
 			kind: VirtualService

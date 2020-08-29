@@ -8,6 +8,6 @@ import (
 
 func main() {
 	rootCmd := &cobra.Command{Use: "app"}
-	rootCmd.AddCommand(cmd.NewWorker())
+	rootCmd.AddCommand(cmd.NewWorkerCommand())
 	rootCmd.Execute()
 }

@@ -24,7 +24,7 @@ func NewDatadogClient(apiKey, appKey string) *DatadogClient {
 	}
 }
 
-func (c *DatadogClient) GetRequestCounts(ctx context.Context, monitoringRange int64) (*RequestCountsResult, error) {
+func (c *DatadogClient) GetRequestCounts(ctx context.Context, monitoringRange int) (*RequestCountsResult, error) {
 	ddCtx := context.WithValue(
 		ctx,
 		dclient.ContextAPIKeys,
@@ -37,9 +37,9 @@ func (c *DatadogClient) GetRequestCounts(ctx context.Context, monitoringRange in
 			},
 		},
 	)
-	to := time.Now().Unix()                              // int64 | Start of the queried time period, seconds since the Unix epoch.
-	from := to - monitoringRange                         // int64 | End of the queried time period, seconds since the Unix epoch.
-	query := "http_server_request_count{*}by{http.host}" // string | Query string.
+	to := time.Now().Unix()
+	from := to - int64(monitoringRange)
+	query := "http_server_request_count{*}by{http.host}"
 
 	resp, _, err := c.client.MetricsApi.QueryMetrics(ddCtx).Query(query).From(from).To(to).Execute()
 	if err != nil {

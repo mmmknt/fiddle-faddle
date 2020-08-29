@@ -10,6 +10,7 @@ require (
 	go.opentelemetry.io/contrib/exporters/metric/datadog v0.11.0
 	go.opentelemetry.io/otel v0.11.0
 	go.opentelemetry.io/otel/sdk v0.11.0
+	go.uber.org/zap v1.10.0
 	istio.io/api v0.0.0-20200812202721-24be265d41c3
 	istio.io/client-go v0.0.0-20200819194923-681da205868c
 	k8s.io/api v0.18.1

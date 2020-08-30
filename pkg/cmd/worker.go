@@ -140,7 +140,7 @@ func (w *Worker) work() error {
 				zap.Error(err), zap.Any("source", source), zap.Any("from", from))
 			continue
 		}
-		if to.equal(from) {
+		if (!from.generated && to.externalWeight == 0) || to.equal(from) {
 			logger.Debug("routing rules are not changed",
 				zap.Any("from", from), zap.Any("to", to))
 			continue

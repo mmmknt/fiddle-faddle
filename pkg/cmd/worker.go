@@ -270,6 +270,12 @@ func (w *Worker) calculate(source *ruleSource, from *routingRule) (*routingRule,
 func (w *Worker) apply(rule *routingRule) error {
 	logger := w.logger.With(zap.Any("rule", rule))
 	logger.Debug("start to apply")
+	// 1. Internal Weight >= 100
+	//    1-1. When VirtualService exist, delete it.
+	//    1-2. When VirtualService doesn't exist, nop.
+	// 2. Internal Weight < 100
+	//    2-1. When VirtualService exist, update it.
+	//    2-2. When VirtualService doesn't exist, create it.
 	if rule.internalWeight >= 100 {
 		if rule.generated {
 			err := w.istioCli.DeleteVirtualService(context.TODO(), rule.targetHost)
@@ -279,16 +285,16 @@ func (w *Worker) apply(rule *routingRule) error {
 			}
 		}
 	} else {
-		if !rule.generated {
-			err := w.istioCli.CreateVirtualService(context.TODO(), rule.targetHost, rule.internalWeight, rule.externalWeight)
-			if err != nil {
-				logger.Error("failed to create VirtualService", zap.Error(err))
-				return err
-			}
-		} else {
+		if rule.generated {
 			err := w.istioCli.UpdateVirtualService(context.TODO(), rule.targetHost, rule.version, rule.internalWeight, rule.externalWeight)
 			if err != nil {
 				logger.Error("failed to update VirtualService", zap.Error(err))
+				return err
+			}
+		} else {
+			err := w.istioCli.CreateVirtualService(context.TODO(), rule.targetHost, rule.internalWeight, rule.externalWeight)
+			if err != nil {
+				logger.Error("failed to create VirtualService", zap.Error(err))
 				return err
 			}
 		}

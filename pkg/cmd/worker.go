@@ -235,31 +235,40 @@ func (w *Worker) calculate(source *ruleSource, from *routingRule) (*routingRule,
 	logger := w.logger.With(zap.Any("rule source", source)).With(zap.Any("current routing rule", from))
 	logger.Debug("start to calculate")
 
+	// 1. currentValue > threshold
+	//    decrease requests to internal in order to keeping currentValue about threshold
+	// 2. currentValue <= threshold
+	//    2-1. When VirtualService exists, increase requests to internal in order to keeping threshold
+	//    2-2. When VirtualService doesn't exist, nop
+
 	targetHost := source.requestCounts.MaxHost
 	targetRequestCount := source.requestCounts.GetCounts(targetHost)
 	totalRequestCount := source.requestCounts.TotalCounts
 	currentValue := source.currentValue
+	generated := from.generated
 
 	// change state from current state
 	internalWeight := 100
 	externalWeight := 0
-	if currentValue > w.threshold {
-		// decrease internal request count
-		wantToDecreaseRequestCount := (currentValue - w.threshold) * int(totalRequestCount) / currentValue
-		totalTargetHostRequest := int(targetRequestCount) * 100 / from.internalWeight
-		internalWeight = int((targetRequestCount - float64(wantToDecreaseRequestCount)) / float64(totalTargetHostRequest) * 100)
-		externalWeight = 100 - internalWeight
-	} else if currentValue < 50 && from.externalWeight > 0 {
-		// increase internal request count
-		wantToIncreaseRequestCount := (60 - currentValue) * int(totalRequestCount) / currentValue
-		totalTargetHostRequest := int(targetRequestCount) * 100 / from.internalWeight
-		internalWeight = int((targetRequestCount + float64(wantToIncreaseRequestCount)) / float64(totalTargetHostRequest) * 100)
+
+	if currentValue >= w.threshold || generated {
+		deltaPercent := float64(currentValue - w.threshold + (w.threshold-50)/2)
+		deltaReqCounts := totalRequestCount * deltaPercent / 100
+		totalTargetReqCount := targetRequestCount
+		if generated && from.internalWeight > 0  {
+			totalTargetReqCount = 100*targetRequestCount/float64(from.internalWeight)
+		}
+		internalWeight = int((targetRequestCount - deltaReqCounts)*100/totalTargetReqCount)
+		if internalWeight > 100 {
+			internalWeight = 100
+		}
 		externalWeight = 100 - internalWeight
 	}
+
 	logger.Debug("finish to calculate", zap.String("target host", targetHost),
 		zap.Int("internal weight", internalWeight), zap.Int("external weight", externalWeight))
 	return &routingRule{
-		generated:      from.generated,
+		generated:      generated,
 		version:        from.version,
 		targetHost:     targetHost,
 		internalWeight: internalWeight,
@@ -283,6 +292,7 @@ func (w *Worker) apply(rule *routingRule) error {
 				logger.Error("failed to delete VirtualService", zap.Error(err))
 				return err
 			}
+			logger.Info("delete VirtualService")
 		}
 	} else {
 		if rule.generated {
@@ -291,12 +301,14 @@ func (w *Worker) apply(rule *routingRule) error {
 				logger.Error("failed to update VirtualService", zap.Error(err))
 				return err
 			}
+			logger.Info("update VirtualService")
 		} else {
 			err := w.istioCli.CreateVirtualService(context.TODO(), rule.targetHost, rule.internalWeight, rule.externalWeight)
 			if err != nil {
 				logger.Error("failed to create VirtualService", zap.Error(err))
 				return err
 			}
+			logger.Info("create VirtualService")
 		}
 	}
 	return nil

@@ -238,12 +238,20 @@ func (w *Worker) calculate(source *ruleSource, from *routingRule) (*routingRule,
 	//    2-1. When VirtualService exists, increase requests to internal in order to keeping threshold
 	//    2-2. When VirtualService doesn't exist, nop
 
+	currentValue := source.currentValue
+	if currentValue > 50 && currentValue < w.threshold {
+		return &routingRule{
+			version:        from.version,
+			targetHost:     from.targetHost,
+			internalWeight: from.internalWeight,
+			externalWeight: from.externalWeight,
+		}, nil
+	}
+
+	// change state from current state
 	targetHost := source.requestCounts.MaxHost
 	targetRequestCount := source.requestCounts.GetCounts(targetHost)
 	totalRequestCount := source.requestCounts.TotalCounts
-	currentValue := source.currentValue
-
-	// change state from current state
 	internalWeight := 100
 	externalWeight := 0
 

@@ -140,13 +140,13 @@ func (w *Worker) work() error {
 				zap.Error(err), zap.Any("source", source), zap.Any("from", from))
 			continue
 		}
-		if (!from.generated && to.externalWeight == 0) || to.equal(from) {
+		if to.equal(from) {
 			logger.Debug("routing rules are not changed",
 				zap.Any("from", from), zap.Any("to", to))
 			continue
 		}
 
-		if err = w.apply(to); err != nil {
+		if err = w.apply(from, to); err != nil {
 			logger.Error("failed to apply routing rule", zap.Error(err))
 			continue
 		}
@@ -199,7 +199,6 @@ func (w *Worker) getRoutingRule() (*routingRule, error) {
 	internalWeight := 100
 	externalWeight := 0
 	targetHost := ""
-	generated := false
 	version := ""
 	for i := range vsList.Items {
 		vs := vsList.Items[i]
@@ -207,7 +206,6 @@ func (w *Worker) getRoutingRule() (*routingRule, error) {
 		logger.Debug("VirtualService item status",
 			zap.Int("index", i), zap.String("auto-generated", ag), zap.Any("hosts", vs.Spec.GetHosts()))
 		if ag == "true" {
-			generated = true
 			targetHost = vs.Spec.GetHosts()[0]
 			version = vs.ObjectMeta.ResourceVersion
 			for _, dest := range vs.Spec.GetHttp()[0].GetRoute() {
@@ -223,7 +221,6 @@ func (w *Worker) getRoutingRule() (*routingRule, error) {
 	}
 
 	return &routingRule{
-		generated:      generated,
 		version:        version,
 		targetHost:     targetHost,
 		internalWeight: internalWeight,
@@ -245,30 +242,32 @@ func (w *Worker) calculate(source *ruleSource, from *routingRule) (*routingRule,
 	targetRequestCount := source.requestCounts.GetCounts(targetHost)
 	totalRequestCount := source.requestCounts.TotalCounts
 	currentValue := source.currentValue
-	generated := from.generated
 
 	// change state from current state
 	internalWeight := 100
 	externalWeight := 0
 
-	if currentValue >= w.threshold || generated {
+	if currentValue >= w.threshold || from.exist() {
 		deltaPercent := float64(currentValue - w.threshold + (w.threshold-50)/2)
 		deltaReqCounts := totalRequestCount * deltaPercent / 100
 		totalTargetReqCount := targetRequestCount
-		if generated && from.internalWeight > 0  {
-			totalTargetReqCount = 100*targetRequestCount/float64(from.internalWeight)
+		if from.exist() && from.internalWeight > 0 {
+			totalTargetReqCount = 100 * targetRequestCount / float64(from.internalWeight)
 		}
-		internalWeight = int((targetRequestCount - deltaReqCounts)*100/totalTargetReqCount)
+		internalWeight = int((targetRequestCount - deltaReqCounts) * 100 / totalTargetReqCount)
 		if internalWeight > 100 {
 			internalWeight = 100
 		}
 		externalWeight = 100 - internalWeight
 	}
 
+	if internalWeight == 100 {
+		targetHost = ""
+	}
+
 	logger.Debug("finish to calculate", zap.String("target host", targetHost),
 		zap.Int("internal weight", internalWeight), zap.Int("external weight", externalWeight))
 	return &routingRule{
-		generated:      generated,
 		version:        from.version,
 		targetHost:     targetHost,
 		internalWeight: internalWeight,
@@ -276,39 +275,46 @@ func (w *Worker) calculate(source *ruleSource, from *routingRule) (*routingRule,
 	}, nil
 }
 
-func (w *Worker) apply(rule *routingRule) error {
-	logger := w.logger.With(zap.Any("rule", rule))
+func (w *Worker) apply(from, to *routingRule) error {
+	logger := w.logger.With(zap.Any("from", from), zap.Any("to", to))
 	logger.Debug("start to apply")
-	// 1. Internal Weight >= 100
-	//    1-1. When VirtualService exist, delete it.
-	//    1-2. When VirtualService doesn't exist, nop.
-	// 2. Internal Weight < 100
-	//    2-1. When VirtualService exist, update it.
-	//    2-2. When VirtualService doesn't exist, create it.
-	if rule.internalWeight >= 100 {
-		if rule.generated {
-			err := w.istioCli.DeleteVirtualService(context.TODO(), rule.targetHost)
-			if err != nil {
-				logger.Error("failed to delete VirtualService", zap.Error(err))
-				return err
-			}
-			logger.Info("delete VirtualService")
-		}
-	} else {
-		if rule.generated {
-			err := w.istioCli.UpdateVirtualService(context.TODO(), rule.targetHost, rule.version, rule.internalWeight, rule.externalWeight)
-			if err != nil {
-				logger.Error("failed to update VirtualService", zap.Error(err))
-				return err
-			}
-			logger.Info("update VirtualService")
-		} else {
-			err := w.istioCli.CreateVirtualService(context.TODO(), rule.targetHost, rule.internalWeight, rule.externalWeight)
+
+	if !from.exist() {
+		if to.exist() {
+			logger.Info("create VirtualService")
+			err := w.istioCli.CreateVirtualService(context.TODO(), to.targetHost, to.internalWeight, to.externalWeight)
 			if err != nil {
 				logger.Error("failed to create VirtualService", zap.Error(err))
 				return err
 			}
-			logger.Info("create VirtualService")
+		}
+	} else {
+		if !to.exist() {
+			logger.Info("delete VirtualService")
+			err := w.istioCli.DeleteVirtualService(context.TODO(), from.targetHost)
+			if err != nil {
+				logger.Error("failed to delete VirtualService", zap.Error(err))
+				return err
+			}
+		} else if from.targetHost == to.targetHost {
+			logger.Info("update VirtualService")
+			err := w.istioCli.UpdateVirtualService(context.TODO(), to.targetHost, to.version, to.internalWeight, to.externalWeight)
+			if err != nil {
+				logger.Error("failed to update VirtualService", zap.Error(err))
+				return err
+			}
+		} else {
+			logger.Info("create new and delete old VirtualService")
+			err := w.istioCli.CreateVirtualService(context.TODO(), to.targetHost, to.internalWeight, to.externalWeight)
+			if err != nil {
+				logger.Error("failed to create VirtualService", zap.Error(err))
+				return err
+			}
+			err = w.istioCli.DeleteVirtualService(context.TODO(), from.targetHost)
+			if err != nil {
+				logger.Error("failed to delete VirtualService", zap.Error(err))
+				return err
+			}
 		}
 	}
 	return nil
@@ -320,15 +326,23 @@ type ruleSource struct {
 }
 
 type routingRule struct {
-	generated      bool
 	version        string
 	targetHost     string
 	internalWeight int
 	externalWeight int
 }
 
+func (r *routingRule) exist() bool {
+	return r.targetHost != ""
+}
+
 func (r *routingRule) equal(rule *routingRule) bool {
 	return r.targetHost == rule.targetHost &&
 		r.internalWeight == rule.internalWeight &&
 		r.externalWeight == rule.externalWeight
+}
+
+func (r *routingRule) String() string {
+	return fmt.Sprintf("version: %s, targetHost: %s, internalWeight: %v, externalWeight: %v",
+		r.version, r.targetHost, r.internalWeight, r.externalWeight)
 }

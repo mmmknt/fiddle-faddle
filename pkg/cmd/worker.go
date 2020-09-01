@@ -145,6 +145,13 @@ func (w *Worker) work() error {
 				zap.Any("from", from), zap.Any("to", to))
 			continue
 		}
+		stabilizationPeriod := (from.internalWeight < to.internalWeight) &&
+			from.updatedAt != nil && time.Since(*from.updatedAt) <= time.Duration(2*w.interval)*time.Second
+		if stabilizationPeriod {
+			logger.Debug("increasing internal weight is pending for stabilization",
+				zap.Any("from", from), zap.Any("to", to))
+			continue
+		}
 
 		if err = w.apply(from, to); err != nil {
 			logger.Error("failed to apply routing rule", zap.Error(err))
@@ -200,6 +207,7 @@ func (w *Worker) getRoutingRule() (*routingRule, error) {
 	externalWeight := 0
 	targetHost := ""
 	version := ""
+	var updatedAt *time.Time
 	for i := range vsList.Items {
 		vs := vsList.Items[i]
 		ag := vs.GetLabels()["auto-generated"]
@@ -208,6 +216,9 @@ func (w *Worker) getRoutingRule() (*routingRule, error) {
 		if ag == "true" {
 			targetHost = vs.Spec.GetHosts()[0]
 			version = vs.ObjectMeta.ResourceVersion
+			if ua, err := time.Parse(time.RFC3339, vs.GetAnnotations()["updated-at"]); err == nil {
+				updatedAt = &ua
+			}
 			for _, dest := range vs.Spec.GetHttp()[0].GetRoute() {
 				dw := dest.GetWeight()
 				dh := dest.Destination.Host
@@ -222,6 +233,7 @@ func (w *Worker) getRoutingRule() (*routingRule, error) {
 
 	return &routingRule{
 		version:        version,
+		updatedAt:      updatedAt,
 		targetHost:     targetHost,
 		internalWeight: internalWeight,
 		externalWeight: externalWeight,
@@ -335,6 +347,7 @@ type ruleSource struct {
 
 type routingRule struct {
 	version        string
+	updatedAt      *time.Time
 	targetHost     string
 	internalWeight int
 	externalWeight int
@@ -351,6 +364,10 @@ func (r *routingRule) equal(rule *routingRule) bool {
 }
 
 func (r *routingRule) String() string {
-	return fmt.Sprintf("version: %s, targetHost: %s, internalWeight: %v, externalWeight: %v",
-		r.version, r.targetHost, r.internalWeight, r.externalWeight)
+	updatedAt := ""
+	if r.updatedAt != nil {
+		updatedAt = r.updatedAt.Format(time.RFC3339)
+	}
+	return fmt.Sprintf("version: %s, updatedAt: %s, targetHost: %s, internalWeight: %v, externalWeight: %v",
+		r.version, updatedAt, r.targetHost, r.internalWeight, r.externalWeight)
 }

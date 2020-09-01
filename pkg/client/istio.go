@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	networkingv1alpha3 "istio.io/api/networking/v1alpha3"
 	"istio.io/client-go/pkg/apis/networking/v1alpha3"
@@ -111,8 +112,9 @@ func (c *IstioClient) getVirtualServiceModel(host string, internalWeight, buffer
 	*/
 	return &v1alpha3.VirtualService{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("buffer-%s", host),
-			Labels: map[string]string{"auto-generated": "true"},
+			Name:        fmt.Sprintf("buffer-%s", host),
+			Labels:      map[string]string{"auto-generated": "true"},
+			Annotations: map[string]string{"updated-at": time.Now().Format(time.RFC3339)},
 		},
 		Spec: networkingv1alpha3.VirtualService{
 			Hosts:    []string{host},

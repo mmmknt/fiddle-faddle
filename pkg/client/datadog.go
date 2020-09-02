@@ -40,7 +40,7 @@ func (c *DatadogClient) GetRequestCounts(ctx context.Context, monitoringRange in
 	)
 	to := time.Now().Unix()
 	from := to - int64(monitoringRange)
-	query := "http_server_request_count{*}by{http.host}"
+	query := "sum:http_server_request_count{*} by {http.host}.as_count()"
 
 	resp, _, err := c.client.MetricsApi.QueryMetrics(ddCtx).Query(query).From(from).To(to).Execute()
 	if err != nil {

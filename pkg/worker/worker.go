@@ -217,7 +217,7 @@ func (w *Worker) calculate(source *RuleSource, from *RoutingRule) (*RoutingRule,
 
 	if currentValue >= w.threshold || from.Exist() {
 		deltaPercent := float64(currentValue - w.threshold + (w.threshold-50)/2)
-		deltaReqCounts := totalRequestCount * deltaPercent / 100
+		deltaReqCounts := totalRequestCount * deltaPercent / float64(currentValue)
 		totalTargetReqCount := targetRequestCount
 		if from.Exist() && from.internalWeight > 0 {
 			totalTargetReqCount = 100 * targetRequestCount / float64(from.internalWeight)

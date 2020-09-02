@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -53,18 +54,21 @@ func (c *DatadogClient) GetRequestCounts(ctx context.Context, monitoringRange in
 		scope := se.GetScope()
 		host := strings.TrimPrefix(scope, "http.host:")
 		pl, ok := se.GetPointlistOk()
-		sum := float64(0)
+		count := float64(0)
 		if ok {
+			timestamp := float64(0)
 			for _, point := range *pl {
-				sum += point[1]
+				if point[0] > timestamp {
+					count = point[1]
+				}
 			}
 		}
-		if sum > maxCount {
+		if count > maxCount {
 			maxHost = host
-			maxCount = sum
+			maxCount = count
 		}
-		requestCount[host] = sum
-		total += sum
+		requestCount[host] = count
+		total += count
 	}
 	return &RequestCountsResult{
 		TotalCounts: total,
@@ -77,6 +81,10 @@ type RequestCountsResult struct {
 	TotalCounts float64
 	MaxHost     string
 	result      map[string]float64
+}
+
+func (r *RequestCountsResult) String() string {
+	return fmt.Sprintf("TotalCounts: %v, MaxHost: %s, result: %v", r.TotalCounts, r.MaxHost, r.result)
 }
 
 func (r *RequestCountsResult) GetCounts(host string) float64 {
